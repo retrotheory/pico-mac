@@ -11,7 +11,7 @@ portable form factor!
 It has features, many features, the best features:
 
    * Outputs VGA 640x480@60Hz, monochrome, using three resistors
-   * Audio 
+   * Audio  PWM / DAC 
    * USB HID keyboard and mouse
    * Read-only disc image in flash (your creations are ephemeral, like life itself)
    * Or, if you have a hard time letting go, support for rewritable
