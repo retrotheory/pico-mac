@@ -40,6 +40,10 @@ set(VIDEO_PIN 18 CACHE STRING "Video GPIO base pin (followed by VS, CLK, HS)")
 option(USE_DAC "Use PCM5102 I2S DAC for audio instead of PWM" OFF)
 option(USE_PWM_AUDIO "Use PWM bit-clock audio (no DAC, different sound)" OFF)
 
+# Platform selection: rp2350 (Pico 2, default) or rp2040 (original Pico)
+set(PICO_PLATFORM rp2350 CACHE STRING "Pico platform: rp2350 (Pico 2) or rp2040 (Pico)")
+set_property(CACHE PICO_PLATFORM PROPERTY STRINGS rp2350 rp2040)
+
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
 
