@@ -1,4 +1,4 @@
-# Pico Micro Mac with Audio (pico-umac)
+# Pico Micro Mac with Audio and 464K  (pico-umac)
 
 v0.21audio 7 May 2026
 
