@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.dis
+*.uf2
+
+# Temporary/test files
+audoses
+dac2attepmt
+dacattempt
+session464audiosd
+ram.bin
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
