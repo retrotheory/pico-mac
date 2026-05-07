@@ -185,17 +185,28 @@ into _one_ of the following files in the root of the card:
 Given the `rom.bin` prepared above and a `disc.bin` destinated for
 flash, you can now generate includes from them and perform the build:
 
+**Important**: The header files need to contain only the raw hex values,
+not the C array declaration. Use `tail` and `head` to strip the array
+wrapper that `xxd -i` adds:
+
 ```
 mkdir incbin
-xxd -i < rom.bin > incbin/umac-rom.h
+
+# Generate ROM header (strip array declaration)
+xxd -i < rom.bin | tail -n +2 | head -n -2 > incbin/umac-rom.h
 
 # When using an internal disc image:
-xxd -i < disc.bin > incbin/umac-disc.h
+xxd -i < disc.bin | tail -n +2 | head -n -2 > incbin/umac-disc.h
 # OR, if using SD and if you do _not_ want an internal image:
 echo > incbin/umac-disc.h
 
 make -C build
 ```
+
+**Why the extra steps?** The firmware embeds these files into its own
+`static const uint8_t` arrays, so the headers must contain only the
+comma-separated hex values (e.g., `0x4d, 0x1f, ...`), not the full
+C array syntax that `xxd -i` produces by default.
 
 You'll get a `build/firmware.uf2` out the other end.  Flash this to
 your Pico: e.g. plug it in with button held/drag/drop.  (When
