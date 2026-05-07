@@ -1,7 +1,8 @@
 # Pico Micro Mac with Audio (pico-umac)
 
 v0.21audio 7 May 2026
-
+Inc 'Tweak VGA Back Porch For Greater Compatibility' 
+       by https://github.com/TechByAndroda/pico-mac
 
 This project embeds the [umac Mac 128K
 emulator](https://github.com/evansm7/umac) project into a Raspberry Pi
