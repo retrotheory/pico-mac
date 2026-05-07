@@ -37,6 +37,8 @@ set(SD_CS 5 CACHE STRING "SD SPI CS pin")
 set(SD_MHZ 5 CACHE STRING "SD SPI speed in MHz")
 option(USE_VGA_RES "Video uses VGA (640x480) resolution" OFF)
 set(VIDEO_PIN 18 CACHE STRING "Video GPIO base pin (followed by VS, CLK, HS)")
+option(USE_DAC "Use PCM5102 I2S DAC for audio instead of PWM" OFF)
+option(USE_PWM_AUDIO "Use PWM bit-clock audio (no DAC, different sound)" OFF)
 
 # See below, -DMEMSIZE=<size in KB> will configure umac's memory size,
 # overriding defaults.
@@ -51,8 +53,19 @@ project(firmware)
 pico_sdk_init()
 
 # For TUSB host stuff:
-set(FAMILY rp2040)
-set(BOARD raspberry_pi_pico)
+# Support both RP2040 (pico) and RP2350 (pico2)
+# Default to pico2 for RP2350 support
+set(FAMILY rp2350_arm-s)
+set(BOARD raspberry_pi_pico2)
+
+# Allow override to build for original Pico (RP2040)
+if(PICO_PLATFORM STREQUAL "rp2040")
+    set(FAMILY rp2040)
+    set(BOARD raspberry_pi_pico)
+    message(STATUS "Building for RP2040 (Pico)")
+else()
+    message(STATUS "Building for RP2350 (Pico 2)")
+endif()
 
 set(TINYUSB_PATH ${PICO_SDK_PATH}/lib/tinyusb)
 
@@ -73,6 +86,20 @@ set(UMAC_SOURCES
   ${UMAC_MUSASHI_PATH}/m68kops.c
   ${UMAC_MUSASHI_PATH}/softfloat/softfloat.c
   )
+
+# Audio driver sources - select based on options
+# Priority: USE_DAC > USE_PWM_AUDIO > default (scanline PWM)
+if(USE_DAC)
+  message(STATUS "Audio: Using PCM5102 I2S DAC")
+  set(AUDIO_SOURCES src/audio_i2s.c)
+elseif(USE_PWM_AUDIO)
+  message(STATUS "Audio: Using PWM bit-clock audio (no DAC)")
+  set(AUDIO_SOURCES src/audio_pwm.c)
+else()
+  message(STATUS "Audio: Using PWM scanline audio")
+  set(AUDIO_SOURCES src/audio_scanline.c)
+  add_compile_definitions(AUDIO_SCANLINE=1)
+endif()
 
 set(MEMSIZE 128 CACHE STRING "Memory size, in KB")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -DPICO -DMUSASHI_CNF=\\\"../include/m68kconf.h\\\" -DUMAC_MEMSIZE=${MEMSIZE}")
@@ -96,10 +123,11 @@ else()
 endif()
 add_compile_definitions(GPIO_VID_BASE=${VIDEO_PIN})
 
-if (TARGET tinyusb_device)
+if (TARGET tinyusb_device OR TARGET tinyusb_host)
   add_executable(firmware
     src/main.c
     src/video.c
+    ${AUDIO_SOURCES}
     src/kbd.c
     src/hid.c
     ${EXTRA_SD_SRC}
@@ -124,6 +152,7 @@ if (TARGET tinyusb_device)
     tinyusb_board
     hardware_dma
     hardware_pio
+    hardware_pwm
     hardware_sync
     ${EXTRA_SD_LIB}
     )
@@ -138,10 +167,136 @@ if (TARGET tinyusb_device)
 
   pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/src/pio_video.pio)
 
+  # Generate I2S PIO header only when using DAC
+  if(USE_DAC)
+    pico_generate_pio_header(firmware ${CMAKE_CURRENT_LIST_DIR}/src/audio_i2s.pio)
+  endif()
+
   pico_enable_stdio_uart(firmware 1)
 
   # Needed for UF2:
   pico_add_extra_outputs(firmware)
+
+  # Minimal GPIO test program (for scope verification)
+  add_executable(gpio_test src/minimal_test.c)
+  target_link_libraries(gpio_test pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(gpio_test)
+
+  # Minimal PWM test (no DMA, just raw PWM)
+  add_executable(minimal_pwm src/minimal_pwm.c)
+  target_link_libraries(minimal_pwm pico_stdlib hardware_pwm hardware_clocks)
+  pico_add_extra_outputs(minimal_pwm)
+
+  # PWM with max drive strength
+  add_executable(minimal_pwm_strong src/minimal_pwm_strong.c)
+  target_link_libraries(minimal_pwm_strong pico_stdlib hardware_pwm hardware_clocks hardware_gpio)
+  pico_add_extra_outputs(minimal_pwm_strong)
+
+  # LED and pin test
+  add_executable(led_and_pin_test src/led_and_pin_test.c)
+  target_link_libraries(led_and_pin_test pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(led_and_pin_test)
+
+  # Simple PWM fixed test (no DMA)
+  add_executable(pwm_fixed_test src/pwm_fixed_test.c)
+  target_link_libraries(pwm_fixed_test pico_stdlib hardware_pwm hardware_clocks)
+  pico_add_extra_outputs(pwm_fixed_test)
+
+  # PWM timer test (timer + PWM)
+  add_executable(pwm_timer_test src/pwm_timer_test.c)
+  target_link_libraries(pwm_timer_test pico_stdlib hardware_pwm hardware_clocks)
+  pico_add_extra_outputs(pwm_timer_test)
+
+  # DAC test - standalone I2S tone output
+  add_executable(dac_test src/dac_test.c)
+  target_link_libraries(dac_test pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_test)
+
+  # DAC test square wave - left-justified format
+  add_executable(dac_test_square src/dac_test_square.c)
+  target_link_libraries(dac_test_square pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_test_square)
+
+  # DAC test proper I2S format
+  add_executable(dac_test_i2s_proper src/dac_test_i2s_proper.c)
+  target_link_libraries(dac_test_i2s_proper pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_test_i2s_proper)
+
+  # DAC test left-justified format
+  add_executable(dac_test_left_justified src/dac_test_left_justified.c)
+  target_link_libraries(dac_test_left_justified pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_test_left_justified)
+
+  # PIO I2S working test (based on elehobica library)
+  add_executable(dac_test_pio_working src/dac_test_pio_working.c)
+  target_link_libraries(dac_test_pio_working pico_stdlib hardware_dma hardware_pio m)
+  pico_generate_pio_header(dac_test_pio_working ${CMAKE_CURRENT_LIST_DIR}/src/pio_i2s.pio)
+  pico_add_extra_outputs(dac_test_pio_working)
+
+  # Simple pin toggle test
+  add_executable(dac_pin_test src/dac_pin_test.c)
+  target_link_libraries(dac_pin_test pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_pin_test)
+
+  # Simple two-tone test (proven GPIO bit-banging method)
+  add_executable(dac_test_two_tones_simple src/dac_test_two_tones_simple.c)
+  target_link_libraries(dac_test_two_tones_simple pico_stdlib hardware_gpio)
+  pico_add_extra_outputs(dac_test_two_tones_simple)
+
+  # PIO two-tone test (working GPIO converted to PIO)
+  add_executable(dac_test_pio_tones_working src/dac_test_pio_tones_working.c)
+  target_link_libraries(dac_test_pio_tones_working pico_stdlib hardware_pio hardware_dma)
+  pico_generate_pio_header(dac_test_pio_tones_working ${CMAKE_CURRENT_LIST_DIR}/src/pio_i2s.pio)
+  pico_add_extra_outputs(dac_test_pio_tones_working)
+
+  # Elehobica library test (exact approach)
+  add_executable(dac_test_elehobica src/dac_test_elehobica.c)
+  target_link_libraries(dac_test_elehobica pico_stdlib hardware_pio hardware_dma m)
+  pico_generate_pio_header(dac_test_elehobica ${CMAKE_CURRENT_LIST_DIR}/src/audio_i2s.pio)
+  pico_add_extra_outputs(dac_test_elehobica)
+
+  # Debug test suite
+  add_executable(dac_debug_test src/dac_debug_test.c)
+  target_link_libraries(dac_debug_test pico_stdlib hardware_pio hardware_dma)
+  pico_generate_pio_header(dac_debug_test ${CMAKE_CURRENT_LIST_DIR}/src/audio_i2s.pio)
+  pico_add_extra_outputs(dac_debug_test)
+
+  # EXACT elehobica test with 96MHz clock and 32-bit samples
+  add_executable(dac_test_exact src/dac_test_exact.c)
+  target_link_libraries(dac_test_exact pico_stdlib hardware_pio hardware_dma hardware_clocks hardware_pll m)
+  pico_generate_pio_header(dac_test_exact ${CMAKE_CURRENT_LIST_DIR}/src/audio_i2s.pio)
+  pico_enable_stdio_usb(dac_test_exact 1)
+  pico_enable_stdio_uart(dac_test_exact 0)
+  pico_add_extra_outputs(dac_test_exact)
+
+  # Mac-style GPIO audio test
+  add_executable(dac_test_gpio_mac src/dac_test_gpio_mac.c)
+  target_link_libraries(dac_test_gpio_mac pico_stdlib hardware_gpio)
+  pico_enable_stdio_usb(dac_test_gpio_mac 1)
+  pico_add_extra_outputs(dac_test_gpio_mac)
+
+  # Mac emulation with audio, NO VIDEO
+  add_executable(mac_audio_test 
+    src/main_audio_test.c
+    src/audio_i2s.c
+    ${UMAC_SOURCES}
+  )
+  target_link_libraries(mac_audio_test 
+    pico_stdlib 
+    pico_multicore
+    hardware_gpio
+    hardware_pio
+    hardware_dma
+  )
+  target_include_directories(mac_audio_test PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/include
+    ${UMAC_INCLUDE_PATHS}
+    incbin
+    ${CMAKE_CURRENT_LIST_DIR}/build
+  )
+  pico_generate_pio_header(mac_audio_test ${CMAKE_CURRENT_LIST_DIR}/src/audio_i2s.pio)
+  pico_enable_stdio_usb(mac_audio_test 1)
+  pico_add_extra_outputs(mac_audio_test)
 
 elseif(PICO_ON_DEVICE)
    message(WARNING "not building firmware because TinyUSB submodule is not initialized in the SDK")

@@ -39,6 +39,7 @@
 #include "hw.h"
 #include "video.h"
 #include "kbd.h"
+#include "audio.h"
 
 #include "bsp/rp2040/board.h"
 #include "tusb.h"
@@ -98,18 +99,25 @@ static int umac_cursor_button = 0;
 
 static void     poll_umac()
 {
-        static absolute_time_t last_1hz = 0;
-        static absolute_time_t last_vsync = 0;
-        absolute_time_t now = get_absolute_time();
+	static absolute_time_t last_1hz = 0;
+	static absolute_time_t last_vsync = 0;
+	static absolute_time_t last_audio_frame = 0;
+	absolute_time_t now = get_absolute_time();
 
-        umac_loop();
+	umac_loop();
 
         int64_t p_1hz = absolute_time_diff_us(last_1hz, now);
         int64_t p_vsync = absolute_time_diff_us(last_vsync, now);
+        int64_t p_audio = absolute_time_diff_us(last_audio_frame, now);
         if (p_vsync >= 16667) {
                 /* FIXME: Trigger this off actual vsync */
                 umac_vsync_event();
                 last_vsync = now;
+        }
+        /* Update audio buffer at 6x frame rate (~360 Hz) for maximum safety */
+        if (p_audio >= 2780) {
+                audio_frame_update();
+                last_audio_frame = now;
         }
         if (p_1hz >= 1000000) {
                 umac_1hz_event();
@@ -255,6 +263,10 @@ static void     core1_main()
          * core 0's USB activity.
          */
         video_init((uint32_t *)(umac_ram + umac_get_fb_offset()));
+
+        /* Audio: PIO1+DMA I2S output (DMA_IRQ_1, won't conflict with video) */
+        audio_init(umac_ram, RAM_SIZE);
+        audio_enable(true);
 
         printf("Enjoyable Mac times now begin:\n\n");
 

@@ -43,6 +43,10 @@
 
 #include "hw.h"
 
+#if AUDIO_SCANLINE
+#include "audio.h"
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 /* VESA VGA mode 640x480@60 */
 
@@ -172,10 +176,13 @@ static void     __not_in_flash_func(video_dma_irq)()
          * All we need to do is reconfigure the descriptors; the video DMA will
          * re-trigger the descriptors later.
          */
-        if (dma_channel_get_irq0_status(video_dmach_descr_data)) {
-                dma_channel_acknowledge_irq0(video_dmach_descr_data);
-                video_dma_prep_new();
-        }
+	if (dma_channel_get_irq0_status(video_dmach_descr_data)) {
+		dma_channel_acknowledge_irq0(video_dmach_descr_data);
+#if AUDIO_SCANLINE
+		audio_hblank_callback();
+#endif
+		video_dma_prep_new();
+	}
 }
 
 static void     video_prep_buffer()
@@ -185,7 +192,7 @@ static void     video_prep_buffer()
         unsigned int porch_padding = (VIDEO_HRES - VIDEO_FB_HRES)/2;
         // FIXME: HBP/HFP are prob off by one or so, check
         uint32_t timing = ((VIDEO_HSW - 1) << 23) |
-                ((VIDEO_HBP + porch_padding - 3) << 15) |
+                ((VIDEO_HBP + porch_padding - 5) << 15) |
                 ((VIDEO_HFP + porch_padding - 4) << 7);
         video_dma_cfg[0] = timing | 0x80000000;
         video_dma_cfg[1] = VIDEO_FB_HRES - 1;

@@ -1,0 +1,42 @@
+; audio_i2s.pio - Official Raspberry Pi I2S PIO program (from pico-extras)
+
+.program audio_i2s
+.side_set 2
+
+;        /--- LRCK  (side 1)
+;        |/-- BCLK  (side 0)
+bitloop1:           ;        ||
+    out pins, 1       side 0b10
+    jmp x-- bitloop1  side 0b11
+    out pins, 1       side 0b00
+    set x, 14         side 0b01
+
+bitloop0:
+    out pins, 1       side 0b00
+    jmp x-- bitloop0  side 0b01
+    out pins, 1       side 0b10
+
+public entry_point:
+    set x, 14         side 0b11
+
+% c-sdk {
+
+static inline void audio_i2s_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base) {
+    pio_sm_config sm_config = audio_i2s_program_get_default_config(offset);
+    
+    sm_config_set_out_pins(&sm_config, data_pin, 1);
+    sm_config_set_sideset_pins(&sm_config, clock_pin_base);
+    sm_config_set_out_shift(&sm_config, false, true, 32);
+    sm_config_set_fifo_join(&sm_config, PIO_FIFO_JOIN_TX);
+    
+    pio_sm_init(pio, sm, offset, &sm_config);
+    
+    uint32_t pin_mask = (1u << data_pin) | (3u << clock_pin_base);
+    pio_sm_set_pindirs_with_mask(pio, sm, pin_mask, pin_mask);
+    pio_sm_set_pins(pio, sm, 0);  // Clear pins
+    
+    // Start at entry point
+    pio_sm_exec(pio, sm, pio_encode_jmp(offset + audio_i2s_offset_entry_point));
+}
+
+%}
