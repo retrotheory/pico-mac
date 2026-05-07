@@ -53,7 +53,7 @@ example:
 
 ```
 cd external/umac
-make MEMSIZE=208
+make MEMSIZE=208 or make MEMSIZE=464 for Pico 2
 ```
 
 This is because `umac` is used to patch the ROM, and when using
