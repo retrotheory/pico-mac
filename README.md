@@ -274,6 +274,30 @@ or RP2040 board with 2MB+ flash as long as all required GPIOs are pinned out:
    For example, `-DVIDEO_PIN=20` configures the Video pin at 20,
    VSYNC at 21, HSYNC at 23.
 
+### Audio pinout
+
+Two audio options are supported, selectable at build time:
+
+**PWM Audio** (default, no DAC required):
+
+| GPIO/pin     | Pico pin     | Usage                  |
+| ------------ | ------------ | ---------------------- |
+|   GP15       | 20           | PWM audio output       |
+
+Connect a speaker or amplifier to GPIO 15. A simple low-pass RC filter
+(1kΩ + 100nF) helps reduce PWM whine, but is optional for basic sound.
+
+**I2S DAC Audio** (PCM5102, best quality):
+
+| GPIO/pin     | Pico pin     | Usage                  |
+| ------------ | ------------ | ---------------------- |
+|   GP6        | 9            | I2S BCLK (bit clock)   |
+|   GP7        | 10           | I2S LRC (word select)  |
+|   GP8        | 11           | I2S DIN (data to DAC)  |
+
+Connect to a PCM5102 or similar I2S DAC module. The DAC outputs line-level
+audio suitable for headphones or powered speakers.
+
 Method:
 
    * Wire 5V supply to VBUS/Gnd
