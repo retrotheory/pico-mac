@@ -1,0 +1,67 @@
+.program pio_i2s_left_justified
+.side_set 2      ; side 0 = BCLK, side 1 = LRCK
+
+; Left-justified I2S format:
+; - Data starts immediately with LRCK edge (no delay)
+; - 16 bits per channel
+; - 32 BCLK cycles total per stereo sample
+
+; Left channel: LRCK = 1, data on BCLK
+; Right channel: LRCK = 0, data on BCLK
+
+public entry_point:
+    pull block              side 0b00   ; [1] Get 16-bit sample, BCLK=0, LRCK=0
+    mov x, osr              side 0b00   ; [1] Save in X
+    set y, 15               side 0b10   ; [1] Bit counter, LRCK=1 (left channel start)
+
+left_loop:
+    out pins, 1             side 0b10   ; [1] Output bit, BCLK=0, LRCK=1
+    jmp y-- left_cont       side 0b11   ; [1] Decrement, BCLK=1
+    jmp right_ch            side 0b11   ; [1] Done with left
+
+left_cont:
+    jmp left_loop           side 0b10   ; [1] Continue left
+
+right_ch:
+    mov osr, x              side 0b00   ; [1] Reload sample
+    set y, 15               side 0b00   ; [1] Bit counter, LRCK=0 (right channel start)
+
+right_loop:
+    out pins, 1             side 0b00   ; [1] Output bit, BCLK=0, LRCK=0
+    jmp y-- right_cont      side 0b01   ; [1] Decrement, BCLK=1
+    jmp entry_point         side 0b01   ; [1] Done, get next sample
+
+right_cont:
+    jmp right_loop          side 0b00   ; [1] Continue right
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
+
+static inline float pio_i2s_calculate_clkdiv(uint32_t sample_rate, uint32_t sys_clk) {
+    /* 2 cycles per bit, 32 bits per frame */
+    return (float)sys_clk / (float)(sample_rate * 32 * 2);
+}
+
+static inline void pio_i2s_program_init(PIO pio, uint sm, uint offset,
+                                        uint din_pin, uint bclk_pin, float clk_div) {
+    /* Init pins */
+    pio_gpio_init(pio, din_pin);
+    pio_gpio_init(pio, bclk_pin);
+    pio_gpio_init(pio, bclk_pin + 1);  /* LRCK */
+    
+    pio_sm_set_consecutive_pindirs(pio, sm, din_pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, bclk_pin, 2, true);
+    
+    pio_sm_config c = pio_i2s_program_get_default_config(offset);
+    sm_config_set_out_pins(&c, din_pin, 1);
+    sm_config_set_sideset_pins(&c, bclk_pin);
+    sm_config_set_sideset(&c, 2, false, false);
+    sm_config_set_out_shift(&c, false, true, 16);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, clk_div);
+    
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_clear_fifos(pio, sm);
+}
+%}

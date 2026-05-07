@@ -1,0 +1,35 @@
+; pio_simple_pwm.pio
+; Ultra-simple PWM test - outputs fixed square wave
+
+.program pio_simple_pwm
+.side_set 1
+
+; Just toggle the pin at a fixed rate
+; This should produce ~11kHz square wave (22254/2)
+
+.wrap_target
+    nop                     side 1 [10]  ; High for 11 cycles
+    nop                     side 0 [10]  ; Low for 11 cycles
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
+
+static inline void pio_simple_pwm_program_init(PIO pio, uint sm, uint offset, 
+                                               uint audio_pin) {
+    pio_gpio_init(pio, audio_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, audio_pin, 1, true);
+
+    pio_sm_config c = pio_simple_pwm_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, audio_pin);
+    sm_config_set_sideset(&c, 1, false, false);
+    
+    ; Run at 22.254kHz * 22 cycles per wrap = 489.6kHz
+    ; At 250MHz: divider = 250000000 / 489588 = ~510.6
+    sm_config_set_clkdiv(&c, 510.6f);
+    
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

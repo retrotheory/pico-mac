@@ -1,0 +1,90 @@
+; pio_pwm_audio.pio
+; RP2350 PIO program for Macintosh PWM audio emulation
+;
+; Fixed-period PWM: Each sample takes exactly 256 PIO cycles
+; This ensures constant sample rate regardless of duty cycle
+;
+; Copyright 2024 - Picomac Audio Driver
+
+.program pio_pwm_audio
+.side_set 1
+
+; Each sample generates one PWM period of exactly 256 PIO cycles
+; Input: 8-bit sample in FIFO (autopulled) - 0=duty cycle, 255=max duty cycle
+; Output: PWM waveform on side-set pin (LOW for X cycles, HIGH for 255-X cycles)
+
+.wrap_target
+    pull block              side 1      ; [1] Get sample (stalls if FIFO empty)
+    mov x, osr              side 1      ; [1] X = sample value (0-255)
+    
+    ; First cycle of LOW phase
+    nop                     side 0      ; [1] 
+    
+    ; Low phase: count down from X to 0
+    ; Each iteration: jmp test (1 cycle) + delay (1 cycle) = 2 cycles per count
+    ; But we need to handle X=0 case specially
+    
+low_loop:
+    jmp x-- low_delay       side 0      ; [1] Test X, decrement, go LOW
+    jmp high_phase          side 0      ; [1] X was 0, move to HIGH phase
+low_delay:
+    nop                     side 0      ; [1] Padding to match timing
+    jmp low_loop            side 0      ; [1] Continue LOW phase
+    
+high_phase:
+    ; We have used: 2 (setup) + 2*X cycles so far for the low phase
+    ; We need total of 256 cycles per sample
+    ; Remaining cycles for high phase: 256 - 2 - 2*X = 254 - 2*X
+    ; This equals 2*(127 - X)
+    ; We can compute this as 255 - X - X = 255 - 2*X... but that's complex
+    
+    ; Alternative: just count up from X to 255
+    ; Number of counts = 256 - X
+    ; But X was decremented past 0, so X is now 0xFF
+    ; We need to load 255 - original_sample
+    
+    mov x, ~osr             side 1      ; [1] X = ~sample (255 - sample)
+    
+high_loop:
+    jmp x-- high_delay      side 1      ; [1] Test X, decrement, go HIGH
+    jmp wrap_target         side 1      ; [1] Done, get next sample (period complete)
+high_delay:
+    nop                     side 1      ; [1] Padding
+    jmp high_loop           side 1      ; [1] Continue HIGH phase
+.wrap
+
+; Total cycles per sample:
+; Sample = 0:  2 + 2*0 + 1 + 2*255 = 2 + 1 + 510 = 513... that's wrong
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
+
+; Simple approach: Just set clock divider so PIO runs at sample_rate * 256
+; For 22254 Hz: PIO clock = 22254 * 256 = 5,697,024 Hz
+; At 250 MHz: divider = 43.88
+
+static inline float pio_pwm_audio_calculate_clkdiv(uint32_t sample_rate, 
+                                                    uint32_t system_clk_hz) {
+    return (float)system_clk_hz / (float)(sample_rate * 256);
+}
+
+static inline void pio_pwm_audio_program_init(PIO pio, uint sm, uint offset, 
+                                              uint audio_pin, float clk_div) {
+    pio_gpio_init(pio, audio_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, audio_pin, 1, true);
+
+    pio_sm_config c = pio_pwm_audio_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, audio_pin);
+    sm_config_set_sideset(&c, 1, false, false);
+    
+    ; Configure autopull - pull 8 bits at a time from FIFO
+    sm_config_set_out_shift(&c, false /* LSB first */, true /* autopull */, 8);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    
+    sm_config_set_clkdiv(&c, clk_div);
+    
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_clear_fifos(pio, sm);
+}
+%}

@@ -1,0 +1,56 @@
+.program i2s
+.side_set 2      ; side 0 = BCLK, side 1 = LRCK
+
+; Left-justified I2S format
+; Autopull 32 bits: left sample in bits 31:16, right sample in bits 15:0
+; For mono: duplicate sample to both channels
+
+                    ;        /--- LRCLK
+                    ;        |/-- BCLK
+bitloop1:           ;        ||
+    out pins, 1       side 0b10  ; Output bit, BCLK=0, LRCK=1 (left)
+    jmp x-- bitloop1  side 0b11  ; BCLK=1
+    out pins, 1       side 0b00  ; Output bit, BCLK=0, LRCK=0
+    mov x, isr        side 0b01  ; BCLK=1, reload counter
+
+bitloop0:
+    out pins, 1       side 0b00  ; Output bit, BCLK=0, LRCK=0 (right)
+    jmp x-- bitloop0  side 0b01  ; BCLK=1
+    out pins, 1       side 0b10  ; Output bit, BCLK=0, LRCK=1
+public entry_point:
+    mov x, isr        side 0b11  ; BCLK=1, reload counter, start left
+
+% c-sdk {
+
+static inline void i2s_program_init(PIO pio, uint sm, uint offset, 
+                                    uint data_pin, uint clock_pin_base) {
+    pio_sm_config sm_config = i2s_program_get_default_config(offset);
+
+    sm_config_set_out_pins(&sm_config, data_pin, 1);
+    sm_config_set_sideset_pins(&sm_config, clock_pin_base);
+    sm_config_set_out_shift(&sm_config, false, true, 32);
+    sm_config_set_fifo_join(&sm_config, PIO_FIFO_JOIN_TX);
+
+    pio_sm_init(pio, sm, offset, &sm_config);
+
+    uint pin_mask = (1u << data_pin) | (3u << clock_pin_base);
+    pio_sm_set_pindirs_with_mask(pio, sm, pin_mask, pin_mask);
+    pio_sm_set_pins(pio, sm, 0);
+    pio_sm_clear_fifos(pio, sm);
+
+    // For 16-bit samples: load 14 into ISR (16-2)
+    pio_sm_set_enabled(pio, sm, false);
+    pio_sm_put_blocking(pio, sm, 14);  // 16 bits - 2
+    pio_sm_exec(pio, sm, pio_encode_pull(false, false));
+    pio_sm_exec(pio, sm, pio_encode_out(pio_isr, 32));
+    pio_sm_set_enabled(pio, sm, true);
+
+    pio_sm_exec(pio, sm, pio_encode_jmp(offset + i2s_offset_entry_point));
+}
+
+static inline float i2s_calculate_clkdiv(uint32_t sample_rate, uint32_t sysclk) {
+    // 2 cycles per bit, 32 bits per stereo sample (16 left + 16 right)
+    return (float)sysclk / (float)(sample_rate * 32 * 2);
+}
+
+%}
