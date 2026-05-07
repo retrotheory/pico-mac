@@ -1,22 +1,23 @@
 # Pico Micro Mac (pico-umac)
 
-v0.21 20 December 2024
+v0.21audio 7 May 2026
 
 
 This project embeds the [umac Mac 128K
 emulator](https://github.com/evansm7/umac) project into a Raspberry Pi
-Pico microcontroller.  At long last, the worst Macintosh in a cheap,
+Pico 2 (RP2350) microcontroller.  At long last, the worst Macintosh in a cheap,
 portable form factor!
 
 It has features, many features, the best features:
 
    * Outputs VGA 640x480@60Hz, monochrome, using three resistors
+   * Audio 
    * USB HID keyboard and mouse
    * Read-only disc image in flash (your creations are ephemeral, like life itself)
    * Or, if you have a hard time letting go, support for rewritable
      disc storage on an SPI-attached SD card
-   * Mac 128K by default, or you can make use of more of the Pico's
-     memory and run as a _Mac 208K_
+   * Mac 128K by default, or you can make use of more of the Pico 2's
+      memory and run as a _Mac 464K_ (or _Mac 208K_ on original Pico)
    * Since you now have more memory, you can splash out on more
      screen real-estate, and use 640x480 resolution!
 
@@ -92,27 +93,49 @@ higher resolution, to change pin configs, etc.:
       - `-DSD_SCK=<gpio pin>`
       - `-DSD_CS=<gpio pin>`
       - `-DSD_MHZ=<integer speed in MHz>`
-   * `-DMEMSIZE=<size in KB>`: The maximum practical size is about
-     208KB, but values between 128 and 208 should work on a RP2040.
-     Note that although apps and Mac OS seem to gracefully detect free
-     memory, these products never existed and some apps might behave
-     strangely.
-      - With the `Mac Plus` ROM, a _Mac 128K_ doesn't quite have
-        enough memory to run _MacPaint_.  So, 192 or 208 (and a
-        writeable boot volume on SD) will allow _MacPaint_ to run.
-      - **NOTE**: When this option is used, the ROM image must be
-          built with an `umac` build with a corresponding `MEMSIZE`
+    * `-DMEMSIZE=<size in KB>`: The maximum practical size depends on platform:
+       - On RP2040 (original Pico): about 208KB
+       - On RP2350 (Pico 2): up to 464KB or more
+      Note that although apps and Mac OS seem to gracefully detect free
+      memory, these products never existed and some apps might behave
+      strangely.
+       - With the `Mac Plus` ROM, a _Mac 128K_ doesn't quite have
+         enough memory to run _MacPaint_.  So, 192 or 208 (and a
+         writeable boot volume on SD) will allow _MacPaint_ to run.
+       - **Pico 2 users**: A _Mac 464K_ configuration works well with
+         `MEMSIZE=464` and provides ample room for larger apps.
+       - **NOTE**: When this option is used, the ROM image must be
+           built with an `umac` build with a corresponding `MEMSIZE`
    * `-DUSE_VGA_RES=1`: Use 640x480 screen resolution instead of the
      native 512x342.  This uses an additional 16KB of RAM, so this
      option makes a _Mac 128K_ configuration virtually unusable.
      It is recommended only to use this when configuring >208K
      using the option above.
-   * `-DVIDEO_PIN=<GPIO pin>`: Move the video output pins; defaults
-     to the pinout shown below.
-
+    * `-DVIDEO_PIN=<GPIO pin>`: Move the video output pins; defaults
+      to the pinout shown below.
+    * `-DPICO_PLATFORM=rp2350|rp2040`: Select target platform. Defaults
+      to `rp2350` for Pico 2. Use `rp2040` for original Pico.
+ 
 Tip: `cmake` caches these variables, so if you see weird behaviour
 having built previously and then changed an option, delete the `build`
 directory and start again.
+
+### Audio support
+
+This fork adds audio support with three driver options selectable at build time:
+
+   * **Scanline PWM** (default): Audio output synced to VGA scanlines on GPIO 15.
+     Provides most authentic timing but may have slight artifacts on complex music.
+   * **Timer PWM** (`-DUSE_PWM_AUDIO=ON`): Hardware timer-based audio on GPIO 15.
+     Simpler timing, good for testing.
+   * **I2S DAC** (`-DUSE_DAC=ON`): High quality audio via PCM5102 I2S DAC
+     (GPIOs 6, 7, 8). Best quality, requires external DAC module.
+
+**Note on audio quality**: The emulated Mac 68000 runs at full Pico 2 speed
+(~250 MHz effective), which generates audio samples faster than a real Mac
+could consume them. This causes occasional artifacts on complex music
+(similar to "fast mode" in other emulators). The audio drivers use buffering
+techniques to minimize this, but some distortion on dense audio may be audible.
 
 ## ROM image
 
@@ -215,7 +238,7 @@ That's it... power in, USB adapter.
 
 Parts needed:
 
-   * Pico/RP2040 board
+   * Pico 2/RP2350 board (or original Pico/RP2040)
    * USB OTG micro-B to A adapter
    * USB keyboard, mouse (and hub, if not integrated)
    * 5V DC supply (600mA+), and maybe a DC jack
@@ -231,8 +254,8 @@ without, or modify your adapter for a 3.3V supply.  Doing so, and
 finding an SD card that works well with SPI is out of scope of this
 doc.)
 
-Pins are given for a RPi Pico board, but this will work on any RP2040
-board with 2MB+ flash as long as all required GPIOs are pinned out:
+Pins are given for a RPi Pico 2 board, but this will work on any RP2350
+or RP2040 board with 2MB+ flash as long as all required GPIOs are pinned out:
 
 | GPIO/pin     | Pico pin     | Usage          |
 | ------------ | ------------ | -------------- |
@@ -302,9 +325,9 @@ Other than that, it's just a main loop in `main.c` shuffling things
 into `umac`.
 
 Quite a lot of optimisation has been done in `umac` and `Musashi` to
-get performance up on Cortex-M0+ and the RP2040, like careful location
+get performance up on Cortex-M33/M0+ and the RP2350/RP2040, like careful location
 of certain routines in RAM, ensuring inlining/constants can be
-foldeed, etc.  It's 5x faster than it was at the beginning.
+folded, etc.  It's 5x faster than it was at the beginning.
 
 The top-level project might be a useful framework for other emulators,
 or other projects that need USB HID input and a framebuffer (e.g. a
