@@ -1,5 +1,5 @@
 [submodule "external/umac"]
-	url = https://github.com/retrotheory/umac-audio/
+	url = https://github.com/retrotheory/umac.git
 	path = external/umac
 [submodule "external/no-OS-FatFS-SD-SPI-RPi-Pico"]
 	path = external/no-OS-FatFS-SD-SPI-RPi-Pico
